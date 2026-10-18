@@ -1,0 +1,269 @@
+generator client {
+  provider      = "prisma-client-js"
+  binaryTargets = ["native", "linux-musl-openssl-3.0.x"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id            String   @id @default(uuid())
+  username      String   @unique
+  email         String   @unique
+  passwordHash  String
+  role          String   @default("USER")
+  position      String   @default("PLAYER")
+  bronze        Int      @default(500)
+  silver        Int      @default(0)
+  goldCoins     Int      @default(0)
+  leader        Int      @default(0)
+  commander     Int      @default(0)
+  supreme       Int      @default(0)
+  divine        Int      @default(0)
+  celestial     Int      @default(0)
+  godly         Int      @default(0)
+  system        Int      @default(0)
+  activeTitleId String?
+  equippedBadge String   @default("none")
+  bio           String   @default("")
+  realName      String   @default("")
+  gender        String   @default("MALE")
+  age           Int      @default(18)
+  bloodType     String   @default("")
+  country       String   @default("INDIA")
+  state         String   @default("MAHARASHTRA")
+  region        String   @default("TRISHUL")
+  area          String   @default("OUTER")
+  partnerId     String?
+  partyId       String?
+  status        String   @default("ACTIVE")
+  emailVerified DateTime?
+  introSeenAt   DateTime?
+  tokenVersion  Int      @default(0)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  activeTitle          Title?           @relation("ActiveTitle", fields: [activeTitleId], references: [id])
+  titles               UserTitle[]
+  deeds                TitleDeed[]      @relation("DeedAuthor")
+  reviewedDeeds        TitleDeed[]      @relation("DeedReviewer")
+  createdTitles        Title[]          @relation("TitleCreator")
+  sentMessages         ChatMessage[]    @relation("SentMessages")
+  receivedMessages     ChatMessage[]    @relation("ReceivedMessages")
+  sentTransactions     Transaction[]    @relation("SentTransactions")
+  receivedTransactions Transaction[]    @relation("ReceivedTransactions")
+  partner              User?            @relation("LifePartner", fields: [partnerId], references: [id])
+  bonded               User[]           @relation("LifePartner")
+  party                Organization?    @relation("PartyMembers", fields: [partyId], references: [id])
+  ledOrgs              Organization[]   @relation("OrgLeader")
+  orgMemberships       OrgMember[]
+  sentFriendRequests   Friendship[]     @relation("FriendFrom")
+  receivedFriendRequests Friendship[]   @relation("FriendTo")
+  upgradeRequests      UpgradeRequest[] @relation("UpgradeAuthor")
+  reviewedUpgrades     UpgradeRequest[] @relation("UpgradeReviewer")
+  taskAssignments      TaskAssignment[]
+  reviewedTasks        TaskAssignment[] @relation("TaskReviewer")
+  authTokens           AuthToken[]
+  deletionRequests     DataDeletionRequest[]
+
+  @@index([username])
+  @@index([email])
+  @@index([position])
+  @@index([status])
+  @@index([country, state, region, area])
+  @@index([createdAt])
+}
+
+model AuthToken {
+  id        String    @id @default(uuid())
+  userId    String
+  type      String
+  tokenHash String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, type, createdAt])
+  @@index([expiresAt])
+}
+
+model DataDeletionRequest {
+  id        String   @id @default(uuid())
+  email     String
+  reason    String   @default("")
+  status    String   @default("PENDING")
+  userId    String?
+  createdAt DateTime @default(now())
+  user      User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([email, createdAt])
+  @@index([status, createdAt])
+}
+
+model Title {
+  id          String      @id @default(uuid())
+  name        String      @unique
+  description String
+  badgeId     String
+  createdById String?
+  createdAt   DateTime    @default(now())
+  createdBy   User?       @relation("TitleCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  users       UserTitle[]
+  equippedBy  User[]      @relation("ActiveTitle")
+  deeds       TitleDeed[]
+}
+
+model UserTitle {
+  userId     String
+  titleId    String
+  grantedBy  String?
+  unlockedAt DateTime @default(now())
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title      Title    @relation(fields: [titleId], references: [id], onDelete: Cascade)
+
+  @@id([userId, titleId])
+  @@index([userId])
+}
+
+model TitleDeed {
+  id           String    @id @default(uuid())
+  userId       String
+  content      String
+  status       String    @default("PENDING")
+  adminNote    String    @default("")
+  titleId      String?
+  reviewedById String?
+  createdAt    DateTime  @default(now())
+  reviewedAt   DateTime?
+  user         User      @relation("DeedAuthor", fields: [userId], references: [id], onDelete: Cascade)
+  reviewer     User?     @relation("DeedReviewer", fields: [reviewedById], references: [id], onDelete: SetNull)
+  title        Title?    @relation(fields: [titleId], references: [id], onDelete: SetNull)
+
+  @@index([status, createdAt])
+  @@index([userId, createdAt])
+}
+
+model ChatMessage {
+  id          String   @id @default(uuid())
+  channelType String
+  senderId    String
+  recipientId String?
+  content     String
+  createdAt   DateTime @default(now())
+  sender      User     @relation("SentMessages", fields: [senderId], references: [id], onDelete: Cascade)
+  recipient   User?    @relation("ReceivedMessages", fields: [recipientId], references: [id], onDelete: SetNull)
+
+  @@index([channelType, createdAt])
+  @@index([senderId, recipientId, createdAt])
+  @@index([recipientId, createdAt])
+}
+
+model Transaction {
+  id         String   @id @default(uuid())
+  senderId   String
+  receiverId String
+  amount     Int
+  currency   String   @default("BRONZE")
+  type       String
+  createdAt  DateTime @default(now())
+  sender     User     @relation("SentTransactions", fields: [senderId], references: [id], onDelete: Restrict)
+  receiver   User     @relation("ReceivedTransactions", fields: [receiverId], references: [id], onDelete: Restrict)
+
+  @@index([senderId, createdAt])
+  @@index([receiverId, createdAt])
+}
+
+model Friendship {
+  id          String    @id @default(uuid())
+  fromId      String
+  toId        String
+  status      String    @default("PENDING")
+  createdAt   DateTime  @default(now())
+  respondedAt DateTime?
+  from        User      @relation("FriendFrom", fields: [fromId], references: [id], onDelete: Cascade)
+  to          User      @relation("FriendTo", fields: [toId], references: [id], onDelete: Cascade)
+
+  @@unique([fromId, toId])
+  @@index([toId, status])
+  @@index([fromId, status])
+}
+
+model Organization {
+  id        String   @id @default(uuid())
+  type      String
+  name      String
+  leaderId  String
+  parentId  String?
+  createdAt DateTime @default(now())
+
+  leader   User           @relation("OrgLeader", fields: [leaderId], references: [id], onDelete: Restrict)
+  parent   Organization?  @relation("OrgTree", fields: [parentId], references: [id], onDelete: SetNull)
+  children Organization[] @relation("OrgTree")
+  members  OrgMember[]
+  players  User[]         @relation("PartyMembers")
+
+  @@index([type, createdAt])
+  @@index([leaderId])
+  @@index([parentId])
+}
+
+model OrgMember {
+  orgId    String
+  userId   String
+  role     String   @default("MEMBER")
+  joinedAt DateTime @default(now())
+  org      Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  user     User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([orgId, userId])
+  @@index([userId])
+}
+
+model UpgradeRequest {
+  id           String    @id @default(uuid())
+  userId       String
+  fromPosition String
+  toPosition   String
+  note         String    @default("")
+  status       String    @default("PENDING")
+  adminNote    String    @default("")
+  reviewedById String?
+  createdAt    DateTime  @default(now())
+  reviewedAt   DateTime?
+  user         User      @relation("UpgradeAuthor", fields: [userId], references: [id], onDelete: Cascade)
+  reviewer     User?     @relation("UpgradeReviewer", fields: [reviewedById], references: [id], onDelete: SetNull)
+
+  @@index([status, createdAt])
+  @@index([userId, createdAt])
+}
+
+model GameTask {
+  id          String           @id @default(uuid())
+  title       String
+  description String
+  createdAt   DateTime         @default(now())
+  assignments TaskAssignment[]
+}
+
+model TaskAssignment {
+  id           String    @id @default(uuid())
+  taskId       String
+  userId       String
+  status       String    @default("SELECTED")
+  report       String    @default("")
+  adminNote    String    @default("")
+  reviewedById String?
+  createdAt    DateTime  @default(now())
+  submittedAt  DateTime?
+  reviewedAt   DateTime?
+  task         GameTask  @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  reviewer     User?     @relation("TaskReviewer", fields: [reviewedById], references: [id], onDelete: SetNull)
+
+  @@unique([taskId, userId])
+  @@index([userId, status])
+  @@index([status, createdAt])
+}
