@@ -7,7 +7,6 @@ const dev = process.env.NODE_ENV !== "production";
 const dir = __dirname;
 const hostname = "0.0.0.0";
 const port = Number(process.env.PORT ?? 3000);
-const nextPort = Number(process.env.NEXT_INTERNAL_PORT ?? 3100);
 const backend = process.env.BACKEND_URL ?? "http://127.0.0.1:3001";
 
 const proxy = httpProxy.createProxyServer({
@@ -15,13 +14,6 @@ const proxy = httpProxy.createProxyServer({
   ws: true,
   changeOrigin: true,
   xfwd: true,
-  proxyTimeout: 25000,
-  timeout: 25000,
-});
-
-const nextProxy = httpProxy.createProxyServer({
-  target: `http://127.0.0.1:${nextPort}`,
-  ws: false,
   proxyTimeout: 25000,
   timeout: 25000,
 });
@@ -60,32 +52,15 @@ proxy.on("error", (err, req, res) => {
   sendProxyFail(req, res, timedOut ? 504 : 502);
 });
 
-nextProxy.on("error", (err, req, res) => {
-  console.error("[next-proxy]", err.message);
-  sendProxyFail(req, res, 502);
-});
-
 let nextHandler = null;
 
 async function prepareNext() {
-  if (dev) {
-    const next = require("next");
-    const app = next({ dev: true, hostname: "127.0.0.1", port: nextPort });
-    nextHandler = app.getRequestHandler();
-    await app.prepare();
-    return;
-  }
-  process.env.NODE_ENV = "production";
-  process.env.__NEXT_PRIVATE_STANDALONE_CONFIG = JSON.stringify(require(path.join(dir, "next-config.json")));
-  const { startServer } = require("next/dist/server/lib/start-server");
-  await startServer({
-    dir,
-    isDev: false,
-    config: JSON.parse(process.env.__NEXT_PRIVATE_STANDALONE_CONFIG),
-    hostname: "127.0.0.1",
-    port: nextPort,
-    allowRetry: false,
-  });
+  // Let Next.js load its own configuration from next.config.js. Do not rely on
+  // a separately generated next-config.json, which is not present in source deploys.
+  const next = require("next");
+  const app = next({ dev, dir });
+  await app.prepare();
+  nextHandler = app.getRequestHandler();
 }
 
 prepareNext().then(() => {
@@ -106,11 +81,7 @@ prepareNext().then(() => {
       proxy.web(req, res);
       return;
     }
-    if (dev) {
-      nextHandler(req, res, parse(url, true));
-      return;
-    }
-    nextProxy.web(req, res);
+    nextHandler(req, res, parse(url, true));
   });
 
   server.on("upgrade", (req, socket, head) => {
@@ -126,7 +97,7 @@ prepareNext().then(() => {
   server.headersTimeout = 33000;
   server.requestTimeout = 30000;
   server.listen(port, hostname, () => {
-    console.log(`[nexus-web] listening on http://${hostname}:${port} -> next :${nextPort}, api ${backend}`);
+    console.log(`[nexus-web] listening on http://${hostname}:${port}, api ${backend}`);
   });
 }).catch((err) => {
   console.error("[nexus-web] failed to start", err);
